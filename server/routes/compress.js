@@ -8,7 +8,8 @@ import crypto from 'crypto';
 import { compressPdf } from '../services/pdfCompressor.js';
 import { compressImage } from '../services/imageCompressor.js';
 import { compressOfficeDoc } from '../services/officeCompressor.js';
-import { compressVideo, compressVideoFile } from '../services/videoCompressor.js';
+import { compressVideoFile } from '../services/videoCompressor.js';
+import { compressAudioFile } from '../services/audioCompressor.js';
 import { packHuffmanBytes } from '../services/huffmanCompressor.js';
 import { validateCompressionLimits, rateLimiterMiddleware } from '../middleware/limitsMiddleware.js';
 import { addAuditLog } from './admin.js';
@@ -54,17 +55,16 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
       : originalname;
 
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
-    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', '3gp'];
-
+    
+    // 1. VIDEO COMPRESSION PIPELINE (5GB+ Direct Disk Streaming)
+    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', '3gp', 'm4v', 'ts', 'mpg', 'mpeg'];
     if (videoExts.includes(ext) || (mimetype && mimetype.startsWith('video/'))) {
-      // 5GB+ Large Video Direct Disk-to-Disk Stream Processing (0 RAM bottleneck)
       outFilePath = await compressVideoFile(reqFilePath, ext);
       const outStat = await fs.promises.stat(outFilePath).catch(() => null);
       const outSize = outStat ? outStat.size : size;
       const outputFilename = `${baseName}_compressed.mp4`;
       const ratio = size > 0 ? Math.max(0, ((1 - (outSize / size)) * 100)) : 0;
 
-      // Add to global admin audit log
       addAuditLog({
         user: `Client (${ip})`,
         ip: ip,
@@ -79,6 +79,7 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(outputFilename)}"`);
       res.setHeader('X-Original-Size', size);
       res.setHeader('X-Compressed-Size', outSize);
+      res.setHeader('Access-Control-Expose-Headers', 'X-Original-Size, X-Compressed-Size, Content-Disposition');
 
       return res.download(outFilePath, outputFilename, async () => {
         try {
@@ -88,24 +89,63 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
       });
     }
 
-    // For PDF, Office, Image & Text files
+    // 2. AUDIO COMPRESSION PIPELINE (MP3, WAV, AAC, M4A, FLAC, OGG, WMA, OPUS)
+    const audioExts = ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'wma', 'opus', 'aiff', 'mka'];
+    if (audioExts.includes(ext) || (mimetype && mimetype.startsWith('audio/'))) {
+      const audioResult = await compressAudioFile(reqFilePath, ext);
+      outFilePath = audioResult.path;
+      const outExt = audioResult.ext || 'mp3';
+      const outStat = await fs.promises.stat(outFilePath).catch(() => null);
+      const outSize = outStat ? outStat.size : size;
+      const outputFilename = `${baseName}_compressed.${outExt}`;
+      const ratio = size > 0 ? Math.max(0, ((1 - (outSize / size)) * 100)) : 0;
+
+      addAuditLog({
+        user: `Client (${ip})`,
+        ip: ip,
+        type: 'Audio Compression',
+        file: originalname,
+        originalBits: size * 8,
+        compressedBits: outSize * 8,
+        ratio: ratio,
+      });
+
+      const audioMime = mime.lookup(outExt) || 'audio/mpeg';
+      res.setHeader('Content-Type', audioMime);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(outputFilename)}"`);
+      res.setHeader('X-Original-Size', size);
+      res.setHeader('X-Compressed-Size', outSize);
+      res.setHeader('Access-Control-Expose-Headers', 'X-Original-Size, X-Compressed-Size, Content-Disposition');
+
+      return res.download(outFilePath, outputFilename, async () => {
+        try {
+          if (reqFilePath && fs.existsSync(reqFilePath)) await fs.promises.unlink(reqFilePath);
+          if (outFilePath && fs.existsSync(outFilePath)) await fs.promises.unlink(outFilePath);
+        } catch (e) {}
+      });
+    }
+
+    // 3. DOCUMENT, IMAGE, OFFICE & TEXT PIPELINES
     const buffer = await fs.promises.readFile(reqFilePath);
     let outputBuffer;
     let outputFilename;
     let outputMimeType;
     let typeName = 'File Compress';
 
+    const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp', 'tiff', 'avif', 'heic'];
+    const officeExts = ['docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'epub'];
+
     if (ext === 'pdf' || mimetype === 'application/pdf') {
       outputBuffer = await compressPdf(buffer);
       outputFilename = `${baseName}_compressed.pdf`;
       outputMimeType = 'application/pdf';
       typeName = 'PDF Compression';
-    } else if (['jpg', 'jpeg', 'png', 'webp'].includes(ext) || mimetype.startsWith('image/')) {
+    } else if (imageExts.includes(ext) || (mimetype && mimetype.startsWith('image/'))) {
       outputBuffer = await compressImage(buffer, ext);
       outputFilename = `${baseName}_compressed.${ext}`;
       outputMimeType = mime.lookup(ext) || mimetype;
       typeName = 'Image Compression';
-    } else if (['docx', 'pptx', 'xlsx'].includes(ext)) {
+    } else if (officeExts.includes(ext)) {
       outputBuffer = await compressOfficeDoc(buffer);
       outputFilename = `${baseName}_compressed.${ext}`;
       outputMimeType = mime.lookup(ext) || mimetype;
