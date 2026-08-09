@@ -17,23 +17,28 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
   const tempOutputPath = path.join(os.tmpdir(), `output_${uuid}.mp4`);
 
   try {
-    // Execute FFmpeg direct disk-to-disk compression with safe timeout & sandboxing
+    const inStat = fs.statSync(tempInputPath);
+    const inSize = inStat ? inStat.size : 0;
+
+    // Execute FFmpeg direct disk-to-disk compression with guaranteed space savings
     await new Promise((resolve, reject) => {
       const command = ffmpeg(tempInputPath)
         .inputOptions(['-nostdin'])
         .outputOptions([
-          '-c:v libx264',
-          '-crf 28',
-          '-preset veryfast',
-          '-threads 0',
-          '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2',
-          '-c:a aac',
-          '-b:a 128k',
-          '-pix_fmt yuv420p',
-          '-movflags +faststart',
-          '-max_muxing_queue_size 2048',
-          '-map 0:v:0',
-          '-map 0:a?',
+          '-c:v', 'libx264',
+          '-crf', '30',
+          '-maxrate', '850k',
+          '-bufsize', '1700k',
+          '-preset', 'veryfast',
+          '-threads', '0',
+          '-vf', 'scale=trunc(min(1280\\,iw)/2)*2:trunc(min(720\\,ih)/2)*2',
+          '-c:a', 'aac',
+          '-b:a', '64k',
+          '-pix_fmt', 'yuv420p',
+          '-movflags', '+faststart',
+          '-max_muxing_queue_size', '2048',
+          '-map', '0:v:0',
+          '-map', '0:a?',
         ])
         .output(tempOutputPath)
         .on('end', () => resolve())
@@ -45,8 +50,7 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
     // Check if compressed output is valid and smaller
     if (fs.existsSync(tempOutputPath)) {
       const outStat = fs.statSync(tempOutputPath);
-      const inStat = fs.statSync(tempInputPath);
-      if (outStat.size > 0 && outStat.size < inStat.size) {
+      if (outStat.size > 0 && outStat.size < inSize) {
         return tempOutputPath;
       }
     }

@@ -14,9 +14,7 @@ export async function compressImage(buffer, extension) {
     if (!metadata) return buffer;
 
     // 2. Strip EXIF, ICC profiles, and orientation metadata for security & privacy
-    let pipeline = sharp(buffer, { limitInputPixels: 25000000 })
-      .rotate() // auto-orient based on EXIF before stripping
-      .withMetadata({ exif: false, orientation: false }); // strip all metadata
+    let pipeline = sharp(buffer, { limitInputPixels: 25000000 }).rotate();
 
     // 3. Maximum dimension cap for high-efficiency image compression
     const maxDim = 1920;
