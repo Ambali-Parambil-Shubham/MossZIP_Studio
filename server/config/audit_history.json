@@ -1,5 +1,16 @@
 [
   {
+    "id": 1786302683622,
+    "timestamp": "2026-08-09T19:11:22.834Z",
+    "user": "Client (::1)",
+    "ip": "::1",
+    "type": "Video Compression",
+    "file": "WhatsApp Video 2026-07-27.mp4",
+    "originalBits": 2749896,
+    "compressedBits": 734216,
+    "ratio": 73.30022662675243
+  },
+  {
     "id": 1785654351419,
     "timestamp": "2026-08-02T07:05:51.028Z",
     "user": "Client (::1)",
