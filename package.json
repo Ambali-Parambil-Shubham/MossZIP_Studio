@@ -5,6 +5,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "node server/index.js",
+    "dev": "node -e \"const { spawn } = require('child_process'); spawn('node', ['server/index.js'], { stdio: 'inherit', shell: true }); spawn('npm', ['--prefix', 'frontend', 'run', 'dev'], { stdio: 'inherit', shell: true });\"",
     "server": "cd server && npm start",
     "frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm install && npm run build",
