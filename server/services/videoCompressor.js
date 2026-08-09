@@ -17,28 +17,39 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
   const tempOutputPath = path.join(os.tmpdir(), `output_${uuid}.mp4`);
 
   try {
-    // Execute FFmpeg direct disk-to-disk compression with 10-minute timeout & sandboxing
+    // Execute FFmpeg direct disk-to-disk compression with safe timeout & sandboxing
     await new Promise((resolve, reject) => {
-      ffmpeg(tempInputPath)
+      const command = ffmpeg(tempInputPath)
         .inputOptions(['-nostdin'])
         .outputOptions([
           '-c:v libx264',
           '-crf 28',
-          '-preset ultrafast',
+          '-preset veryfast',
           '-threads 0',
+          '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2',
           '-c:a aac',
           '-b:a 128k',
           '-pix_fmt yuv420p',
           '-movflags +faststart',
           '-max_muxing_queue_size 2048',
-          '-map_metadata 0',
+          '-map 0:v:0',
+          '-map 0:a?',
         ])
         .output(tempOutputPath)
-        .timeout(600) // 10 minute execution limit to prevent infinite encoding loops
         .on('end', () => resolve())
-        .on('error', (err) => reject(err))
-        .run();
+        .on('error', (err) => reject(err));
+
+      command.run();
     });
+
+    // Check if compressed output is valid and smaller
+    if (fs.existsSync(tempOutputPath)) {
+      const outStat = fs.statSync(tempOutputPath);
+      const inStat = fs.statSync(tempInputPath);
+      if (outStat.size > 0 && outStat.size < inStat.size) {
+        return tempOutputPath;
+      }
+    }
 
     return tempOutputPath;
   } catch (err) {

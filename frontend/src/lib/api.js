@@ -1,4 +1,3 @@
-
 export function getApiUrl(path) {
   if (!path.startsWith('/')) {
     path = '/' + path;
@@ -10,6 +9,13 @@ export function getApiUrl(path) {
     return `${base}${path}`;
   }
 
-  // Unified server: frontend and API are served together — use relative path everywhere
+  // Native mobile Capacitor container or Electron file:// protocol
+  if (typeof window !== 'undefined') {
+    if (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:') {
+      return `http://localhost:3001${path}`;
+    }
+  }
+
+  // Unified production server: frontend and API are served on same origin
   return path;
 }

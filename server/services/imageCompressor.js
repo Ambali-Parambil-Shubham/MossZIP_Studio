@@ -18,8 +18,8 @@ export async function compressImage(buffer, extension) {
       .rotate() // auto-orient based on EXIF before stripping
       .withMetadata({ exif: false, orientation: false }); // strip all metadata
 
-    // 3. Maximum dimension cap to prevent RAM exhaustion
-    const maxDim = 320;
+    // 3. Maximum dimension cap for high-efficiency image compression
+    const maxDim = 1920;
     if (metadata.width > maxDim || metadata.height > maxDim) {
       pipeline = pipeline.resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true });
     }
@@ -28,7 +28,7 @@ export async function compressImage(buffer, extension) {
     if (ext === 'jpg' || ext === 'jpeg') {
       resultBuffer = await pipeline
         .jpeg({
-          quality: 14,
+          quality: 65,
           mozjpeg: true,
           progressive: true,
           chromaSubsampling: '4:2:0',
@@ -40,14 +40,14 @@ export async function compressImage(buffer, extension) {
           compressionLevel: 9,
           adaptiveFiltering: true,
           palette: true,
-          quality: 40,
+          quality: 65,
         })
         .toBuffer();
     } else if (ext === 'webp') {
       resultBuffer = await pipeline
         .webp({
-          quality: 22,
-          effort: 6,
+          quality: 65,
+          effort: 5,
         })
         .toBuffer();
     } else {
