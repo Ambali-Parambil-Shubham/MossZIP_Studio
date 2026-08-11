@@ -13,7 +13,7 @@ function formatBytes(bytes) {
 }
 
 export default function MergePdfPage({ onRecord }) {
-  const { requireAuth, showToast } = useAuth();
+  const { user, requireAuth, showToast } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [resultBlob, setResultBlob] = useState(null);
@@ -116,12 +116,19 @@ export default function MergePdfPage({ onRecord }) {
     let mergedBlob = null;
 
     try {
+      const currentUserName = user?.full_name || user?.email || (localStorage.getItem('mosszip_user') ? JSON.parse(localStorage.getItem('mosszip_user'))?.full_name : null);
       const formData = new FormData();
       selectedFiles.forEach((file) => formData.append('files', file));
+      if (currentUserName) {
+        formData.append('userName', currentUserName);
+      }
 
       const response = await fetch(getApiUrl('/api/merge-pdfs'), {
         method: 'POST',
         body: formData,
+        headers: {
+          ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
+        }
       });
 
       if (response.ok) {

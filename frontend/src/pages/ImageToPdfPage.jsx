@@ -193,12 +193,19 @@ export default function ImageToPdfPage({ onRecord }) {
     let pdfBlob = null;
 
     try {
+      const currentUserName = user?.full_name || user?.email || (localStorage.getItem('mosszip_user') ? JSON.parse(localStorage.getItem('mosszip_user'))?.full_name : null);
       const formData = new FormData();
       selectedFiles.forEach((file) => formData.append('files', file));
+      if (currentUserName) {
+        formData.append('userName', currentUserName);
+      }
 
       const response = await fetch(getApiUrl('/api/image-to-pdf'), {
         method: 'POST',
         body: formData,
+        headers: {
+          ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
+        }
       });
 
       if (response.ok) {

@@ -42,10 +42,18 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), validateCompressi
       ? origName.slice(0, origName.lastIndexOf('.'))
       : 'document';
 
+    const rawClientUser = req.headers['x-user-name'] || req.body?.userName || req.headers['user-name'];
+    let clientName = null;
+    if (rawClientUser && typeof rawClientUser === 'string') {
+      try { clientName = decodeURIComponent(rawClientUser).trim(); } catch (e) { clientName = rawClientUser.trim(); }
+    }
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const userIdentifier = (clientName && clientName !== 'Guest' && clientName !== 'null' && clientName.length > 0)
+      ? `${clientName} (${ip})`
+      : `User (${ip})`;
 
     addAuditLog({
-      user: `Client (${ip})`,
+      user: userIdentifier,
       ip: ip,
       type: 'PDF to Word',
       file: origName,

@@ -1,5 +1,27 @@
 [
   {
+    "id": 1786473096209,
+    "timestamp": "2026-08-11T18:31:36.193Z",
+    "user": "Alex Vance (::ffff:127.0.0.1)",
+    "ip": "::ffff:127.0.0.1",
+    "type": "Huffman Encoding",
+    "file": "test_user.txt",
+    "originalBits": 480,
+    "compressedBits": 2568,
+    "ratio": 0
+  },
+  {
+    "id": 1786473069386,
+    "timestamp": "2026-08-11T18:31:08.838Z",
+    "user": "Alex Vance (::ffff:127.0.0.1)",
+    "ip": "::ffff:127.0.0.1",
+    "type": "Huffman Encoding",
+    "file": "test_user.txt",
+    "originalBits": 480,
+    "compressedBits": 2568,
+    "ratio": 0
+  },
+  {
     "id": 1786303658296,
     "timestamp": "2026-08-09T19:27:38.285Z",
     "user": "Shubham AP (+91 8698833618)",

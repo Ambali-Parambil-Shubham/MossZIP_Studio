@@ -54,7 +54,19 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
       ? originalname.slice(0, originalname.lastIndexOf('.'))
       : originalname;
 
+    const rawClientUser = req.headers['x-user-name'] || req.body?.userName || req.headers['user-name'];
+    let clientName = null;
+    if (rawClientUser && typeof rawClientUser === 'string') {
+      try {
+        clientName = decodeURIComponent(rawClientUser).trim();
+      } catch (e) {
+        clientName = rawClientUser.trim();
+      }
+    }
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const userIdentifier = (clientName && clientName !== 'Guest' && clientName !== 'null' && clientName.length > 0)
+      ? `${clientName} (${ip})`
+      : `User (${ip})`;
     
     // 1. VIDEO COMPRESSION PIPELINE (5GB+ Direct Disk Streaming)
     const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', '3gp', 'm4v', 'ts', 'mpg', 'mpeg'];
@@ -66,7 +78,7 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
       const ratio = size > 0 ? Math.max(0, ((1 - (outSize / size)) * 100)) : 0;
 
       addAuditLog({
-        user: `Client (${ip})`,
+        user: userIdentifier,
         ip: ip,
         type: 'Video Compression',
         file: originalname,
@@ -106,7 +118,7 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
       const ratio = size > 0 ? Math.max(0, ((1 - (outSize / size)) * 100)) : 0;
 
       addAuditLog({
-        user: `Client (${ip})`,
+        user: userIdentifier,
         ip: ip,
         type: 'Audio Compression',
         file: originalname,
@@ -170,7 +182,7 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
 
     // Add to global admin audit log
     addAuditLog({
-      user: `Client (${ip})`,
+      user: userIdentifier,
       ip: ip,
       type: typeName,
       file: originalname,

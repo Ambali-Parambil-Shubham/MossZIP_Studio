@@ -204,12 +204,19 @@ export default function CompressorPage({ onRecord, onResult, preserveFormat, set
 
         if (inputMode === 'file' && uploadPayload) {
           try {
+            const currentUserName = user?.full_name || user?.email || (localStorage.getItem('mosszip_user') ? JSON.parse(localStorage.getItem('mosszip_user'))?.full_name : null);
             const formData = new FormData();
             formData.append('file', uploadPayload);
+            if (currentUserName) {
+              formData.append('userName', currentUserName);
+            }
 
             const response = await fetch(getApiUrl('/api/compress'), {
               method: 'POST',
               body: formData,
+              headers: {
+                ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
+              }
             });
 
             if (response.ok) {

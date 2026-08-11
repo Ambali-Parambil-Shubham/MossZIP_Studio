@@ -44,12 +44,19 @@ router.post('/', rateLimiterMiddleware, upload.array('files', 100), validateComp
       }
     }
 
-    const mergedBuffer = await mergePdfs(uploadedFiles);
+    const rawClientUser = req.headers['x-user-name'] || req.body?.userName || req.headers['user-name'];
+    let clientName = null;
+    if (rawClientUser && typeof rawClientUser === 'string') {
+      try { clientName = decodeURIComponent(rawClientUser).trim(); } catch (e) { clientName = rawClientUser.trim(); }
+    }
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const userIdentifier = (clientName && clientName !== 'Guest' && clientName !== 'null' && clientName.length > 0)
+      ? `${clientName} (${ip})`
+      : `User (${ip})`;
     const totalOrigBytes = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
 
     addAuditLog({
-      user: `Client (${ip})`,
+      user: userIdentifier,
       ip: ip,
       type: 'Merge PDF',
       file: `${uploadedFiles.length} PDFs Merged`,
