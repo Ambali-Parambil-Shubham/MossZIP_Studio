@@ -75,17 +75,22 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
         ratio: ratio,
       });
 
-      res.setHeader('Content-Type', 'video/mp4');
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(outputFilename)}"`);
       res.setHeader('X-Original-Size', size);
       res.setHeader('X-Compressed-Size', outSize);
       res.setHeader('Access-Control-Expose-Headers', 'X-Original-Size, X-Compressed-Size, Content-Disposition');
 
-      return res.download(outFilePath, outputFilename, async () => {
+      res.on('finish', async () => {
         try {
           if (reqFilePath && fs.existsSync(reqFilePath)) await fs.promises.unlink(reqFilePath);
           if (outFilePath && fs.existsSync(outFilePath)) await fs.promises.unlink(outFilePath);
         } catch (e) {}
+      });
+
+      return res.download(path.resolve(outFilePath), outputFilename, (err) => {
+        if (err && !res.headersSent) {
+          console.error('[VideoDownload] Stream error:', err);
+          res.status(500).json({ error: 'Video download failed.' });
+        }
       });
     }
 
@@ -110,18 +115,22 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), fileSecurityMiddl
         ratio: ratio,
       });
 
-      const audioMime = mime.lookup(outExt) || 'audio/mpeg';
-      res.setHeader('Content-Type', audioMime);
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(outputFilename)}"`);
       res.setHeader('X-Original-Size', size);
       res.setHeader('X-Compressed-Size', outSize);
       res.setHeader('Access-Control-Expose-Headers', 'X-Original-Size, X-Compressed-Size, Content-Disposition');
 
-      return res.download(outFilePath, outputFilename, async () => {
+      res.on('finish', async () => {
         try {
           if (reqFilePath && fs.existsSync(reqFilePath)) await fs.promises.unlink(reqFilePath);
           if (outFilePath && fs.existsSync(outFilePath)) await fs.promises.unlink(outFilePath);
         } catch (e) {}
+      });
+
+      return res.download(path.resolve(outFilePath), outputFilename, (err) => {
+        if (err && !res.headersSent) {
+          console.error('[AudioDownload] Stream error:', err);
+          res.status(500).json({ error: 'Audio download failed.' });
+        }
       });
     }
 

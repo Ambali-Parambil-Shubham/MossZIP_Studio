@@ -59,14 +59,26 @@ export async function downloadFile(blob, fileName) {
 function browserDownload(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
+  a.style.display = 'none';
   a.href = url;
   a.download = fileName;
   document.body.appendChild(a);
   a.click();
+
   setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
+    try {
+      if (document.body.contains(a)) {
+        document.body.removeChild(a);
+      }
+    } catch (e) {}
+
+    // Safe 60-second delayed revocation to allow complete disk flushing on large files
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {}
+    }, 60000);
+  }, 100);
 }
 
 /** Convert a Blob to a base64 data URL */

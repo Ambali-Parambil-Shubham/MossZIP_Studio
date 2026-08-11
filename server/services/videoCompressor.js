@@ -20,20 +20,20 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
     const inStat = fs.statSync(tempInputPath);
     const inSize = inStat ? inStat.size : 0;
 
-    // Execute FFmpeg direct disk-to-disk compression with guaranteed space savings
+    // Production-Safe FFmpeg Compression (H.264 + AAC, Preserves Duration, Audio & Timing)
     await new Promise((resolve, reject) => {
       const command = ffmpeg(tempInputPath)
         .inputOptions(['-nostdin'])
         .outputOptions([
           '-c:v', 'libx264',
-          '-crf', '30',
-          '-maxrate', '850k',
-          '-bufsize', '1700k',
-          '-preset', 'veryfast',
+          '-crf', '28',
+          '-preset', 'fast',
           '-threads', '0',
-          '-vf', 'scale=trunc(min(1280\\,iw)/2)*2:trunc(min(720\\,ih)/2)*2',
+          '-vf', 'scale=trunc(min(1920\\,iw)/2)*2:trunc(min(1080\\,ih)/2)*2',
           '-c:a', 'aac',
-          '-b:a', '64k',
+          '-b:a', '128k',
+          '-ar', '44100',
+          '-ac', '2',
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
           '-max_muxing_queue_size', '2048',
@@ -47,10 +47,10 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
       command.run();
     });
 
-    // Check if compressed output is valid and smaller
+    // Verify output integrity and non-zero size
     if (fs.existsSync(tempOutputPath)) {
       const outStat = fs.statSync(tempOutputPath);
-      if (outStat.size > 0 && outStat.size < inSize) {
+      if (outStat.size > 1024 && outStat.size < inSize) {
         return tempOutputPath;
       }
     }

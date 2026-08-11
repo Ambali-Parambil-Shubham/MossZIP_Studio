@@ -368,18 +368,50 @@ export default function CompressorPage({ onRecord, onResult, preserveFormat, set
     let safeName;
     let mimeType;
 
+    const mimeMap = {
+      pdf: 'application/pdf',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      svg: 'image/svg+xml',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      avi: 'video/x-msvideo',
+      webm: 'video/webm',
+      mkv: 'video/x-matroska',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      aac: 'audio/aac',
+      m4a: 'audio/mp4',
+      flac: 'audio/flac',
+      ogg: 'audio/ogg',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+
     if (result.isDirectFormat) {
-      const ext = result.ext || 'mp4';
+      const ext = (result.ext || 'mp4').toLowerCase();
       const baseName = rawName.includes('.') ? rawName.slice(0, rawName.lastIndexOf('.')) : rawName;
       safeName = `${baseName}_compressed.${ext}`;
-      mimeType = ext === 'pdf' ? 'application/pdf' : ext === 'mp4' ? 'video/mp4' : ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'application/octet-stream';
+      mimeType = mimeMap[ext] || 'application/octet-stream';
     } else {
       const baseName = rawName.includes('.') ? rawName.slice(0, rawName.lastIndexOf('.')) : rawName;
       safeName = `${baseName}_compressed.huff`;
       mimeType = 'application/x-huffman';
     }
 
-    const blob = result.payload instanceof Blob ? result.payload : new Blob([result.payload], { type: mimeType });
+    const blob = (result.payload instanceof Blob) 
+      ? result.payload 
+      : new Blob([result.payload], { type: mimeType });
+
+    if (blob.size === 0) {
+      showToast('❌ Compression error: generated file is empty.');
+      return;
+    }
+
     await downloadFile(blob, safeName);
     showToast(`✅ "${safeName}" downloaded successfully!`);
   };
