@@ -115,24 +115,35 @@ export default function App() {
 
     async function loadCentralRecords() {
       try {
-        const { data, error } = await supabase
-          .from('compression_jobs')
-          // Select only the columns we actually use — no wasted data transfer
-          .select('id, job_type, name, file_name, original_bits, compressed_bits_count, ratio, stats, created_at')
-          .order('created_at', { ascending: false })
-          .limit(100); // Pagination guard — prevent unbounded fetches
+        const [{ data: jobsData, error: jobErr }, { data: usersData }] = await Promise.all([
+          supabase
+            .from('compression_jobs')
+            .select('id, job_type, name, file_name, original_bits, compressed_bits_count, ratio, stats, created_at, user_id')
+            .order('created_at', { ascending: false })
+            .limit(100),
+          supabase
+            .from('app_users')
+            .select('id, full_name, email, mobile')
+        ]);
 
-        if (cancelled || error || !data || data.length === 0) return;
+        if (cancelled || jobErr || !jobsData || jobsData.length === 0) return;
 
-        const supaRecords = data.map((job) => ({
-          id:             job.id,
-          type:           job.job_type || 'Compress',
-          file:           job.name || job.file_name || 'payload.bin',
-          originalBits:   job.stats?.originalBits   || job.original_bits          || 0,
-          compressedBits: job.stats?.compressedBits  || job.compressed_bits_count  || 0,
-          ratio:          job.stats?.ratio            || job.ratio                  || 0,
-          timestamp:      job.created_at,
-        }));
+        const userMap = new Map();
+        (usersData || []).forEach(u => userMap.set(u.id, u.full_name));
+
+        const supaRecords = jobsData.map((job) => {
+          const matchedUser = job.stats?.user || (job.user_id ? userMap.get(job.user_id) : null) || 'Guest';
+          return {
+            id:             job.id,
+            user:           matchedUser,
+            type:           job.job_type || 'Compress',
+            file:           job.name || job.file_name || 'payload.bin',
+            originalBits:   job.stats?.originalBits   || job.original_bits          || 0,
+            compressedBits: job.stats?.compressedBits  || job.compressed_bits_count  || 0,
+            ratio:          job.stats?.ratio            || job.ratio                  || 0,
+            timestamp:      job.created_at,
+          };
+        });
 
         setRecords(prev => {
           const map = new Map();
@@ -152,9 +163,13 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // ── Stable record handler — useCallback prevents children re-rendering ────────
   const handleRecord = useCallback(async (record) => {
-    const activeUserName = user?.full_name ? user.full_name.trim() : 'Guest';
+    const activeUserName = (user?.full_name ? user.full_name.trim() : null) || (() => {
+      try {
+        const s = localStorage.getItem('mosszip_user');
+        return s ? (JSON.parse(s)?.full_name || JSON.parse(s)?.name) : null;
+      } catch (e) { return null; }
+    })() || 'Guest';
     const recordWithUser = { ...record, user: activeUserName };
 
     setRecords(prev => {
@@ -163,26 +178,13 @@ export default function App() {
       return updated;
     });
 
-    // Fire-and-forget log to Admin Command Center
-    fetch(getApiUrl('/api/admin/record-log'), {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user:           activeUserName,
-        type:           record.type || 'Compress',
-        file:           record.file,
-        originalBits:   record.originalBits   || 0,
-        compressedBits: record.compressedBits  || 0,
-        ratio:          record.ratio           || 0,
-      }),
-    }).catch(() => {});
-
     if (supabase) {
       try {
         await supabase.from('compression_jobs').insert({
           name:                  record.file,
           file_name:             record.file,
           job_type:              record.type || 'Compress',
+          user_id:               user?.id || null,
           original_bits:         record.originalBits        || 0,
           compressed_bits_count: record.compressedBits      || 0,
           ratio:                 record.ratio               || 0,
@@ -192,6 +194,7 @@ export default function App() {
             originalBits:   record.originalBits,
             compressedBits: record.compressedBits,
             ratio:          record.ratio,
+            user:           activeUserName,
           },
         });
       } catch (err) {

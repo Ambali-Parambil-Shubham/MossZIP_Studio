@@ -33,7 +33,7 @@ function isBinaryText(str) {
 }
 
 export default function CompressorPage({ onRecord, onResult, preserveFormat, setPreserveFormat }) {
-  const { requireAuth, showToast } = useAuth();
+  const { user, requireAuth, showToast } = useAuth();
   const [fileInfo, setFileInfo] = useState(null);
   const [text, setText] = useState('');
   const [result, setResult] = useState(null);
@@ -204,10 +204,16 @@ export default function CompressorPage({ onRecord, onResult, preserveFormat, set
 
         if (inputMode === 'file' && uploadPayload) {
           try {
-            const currentUserName = user?.full_name || user?.email || (localStorage.getItem('mosszip_user') ? JSON.parse(localStorage.getItem('mosszip_user'))?.full_name : null);
+            const currentUserName = user?.full_name || (() => {
+              try {
+                const s = localStorage.getItem('mosszip_user');
+                return s ? (JSON.parse(s)?.full_name || JSON.parse(s)?.name) : null;
+              } catch (e) { return null; }
+            })() || 'Guest';
+
             const formData = new FormData();
             formData.append('file', uploadPayload);
-            if (currentUserName) {
+            if (currentUserName && currentUserName !== 'Guest') {
               formData.append('userName', currentUserName);
             }
 
@@ -215,7 +221,7 @@ export default function CompressorPage({ onRecord, onResult, preserveFormat, set
               method: 'POST',
               body: formData,
               headers: {
-                ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
+                ...(currentUserName && currentUserName !== 'Guest' ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
               }
             });
 
@@ -326,17 +332,6 @@ export default function CompressorPage({ onRecord, onResult, preserveFormat, set
           `[STATS] ${now()} Original: ${formatBytes(stats.originalBits / 8)} → Compressed: ${formatBytes(stats.compressedBits / 8)}`,
           `[SUCCESS] ${now()} Compression complete. Space saved: ${stats.ratio.toFixed(1)}%`,
         ]);
-
-        if (supabase) {
-          await supabase.from('compression_jobs').insert({
-            name: `${rawName}_compressed.${isDirectFormat ? ext : 'huff'}`,
-            original_text: typeof input === 'string' ? input : '[Binary Data]',
-            compressed_bits: encoded || '[Format Preserved]',
-            stats: stats,
-            frequency_map: Object.fromEntries(freqMap),
-            huffman_codes: Object.fromEntries(codes)
-          });
-        }
 
         if (onResult) {
           onResult({ root, freqMap, codes, encoded, originalText: input });

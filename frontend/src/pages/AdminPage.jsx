@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient.js';
 import { getApiUrl } from '../lib/api.js';
 
@@ -175,6 +175,46 @@ export default function AdminPage({ records = [], onClearHistory }) {
 
   const fetchAuditLogs = async (token) => {
     if (!token) return;
+
+    // 1. Fetch from central Supabase Cloud (with live user relations)
+    if (supabase) {
+      try {
+        const [{ data: jobsData }, { data: usersData }] = await Promise.all([
+          supabase
+            .from('compression_jobs')
+            .select('id, job_type, name, file_name, original_bits, compressed_bits_count, ratio, stats, created_at, user_id')
+            .order('created_at', { ascending: false })
+            .limit(200),
+          supabase
+            .from('app_users')
+            .select('id, full_name, email, mobile')
+        ]);
+
+        if (jobsData && jobsData.length > 0) {
+          const userMap = new Map();
+          (usersData || []).forEach(u => userMap.set(u.id, u.full_name));
+
+          const supaLogs = jobsData.map(job => ({
+            id: job.id,
+            timestamp: job.created_at,
+            user: job.stats?.user || (job.user_id ? userMap.get(job.user_id) : null) || 'Guest',
+            ip: 'Cloud',
+            type: job.job_type || 'Compress',
+            file: job.name || job.file_name || 'payload.bin',
+            originalBits: job.stats?.originalBits || job.original_bits || 0,
+            compressedBits: job.stats?.compressedBits || job.compressed_bits_count || 0,
+            ratio: job.stats?.ratio || job.ratio || 0,
+          }));
+
+          setAuditLogs(supaLogs);
+          return;
+        }
+      } catch (err) {
+        console.warn('[AdminPage] Supabase audit fetch notice:', err);
+      }
+    }
+
+    // 2. Fallback to Express backend audit logs
     try {
       const res = await fetch(getApiUrl('/api/admin/audit-logs'), {
         headers: { 'x-admin-key': token },
@@ -390,7 +430,27 @@ export default function AdminPage({ records = [], onClearHistory }) {
     }
   };
 
-  const displayLogs = auditLogs.length > 0 ? auditLogs : records;
+  const displayLogs = useMemo(() => {
+    const rawList = auditLogs.length > 0 ? auditLogs : records;
+    const seen = new Set();
+    const unique = [];
+
+    for (const item of rawList) {
+      if (!item) continue;
+      const baseFile = (item.file || '')
+        .replace(/_compressed\.[a-z0-9]+$/i, '')
+        .trim()
+        .toLowerCase();
+      const timeBucket = item.timestamp ? Math.floor(new Date(item.timestamp).getTime() / 5000) : item.id;
+      const dedupeKey = `${baseFile}_${timeBucket}`;
+
+      if (!seen.has(dedupeKey)) {
+        seen.add(dedupeKey);
+        unique.push(item);
+      }
+    }
+    return unique;
+  }, [auditLogs, records]);
 
   const filteredLogs = displayLogs.filter(item => {
     const fileMatch = (item.file || '').toLowerCase().includes(search.toLowerCase());
