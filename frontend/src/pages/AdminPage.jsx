@@ -1021,6 +1021,9 @@ export default function AdminPage({ records = [], onClearHistory }) {
                 filteredLogs.map((log) => {
                   const origBytes = Math.round((log.originalBits || 0) / 8);
                   const compBytes = Math.round((log.compressedBits || 0) / 8);
+                  const computedRatio = (origBytes > 0 && compBytes > 0 && origBytes >= compBytes)
+                    ? ((1 - (compBytes / origBytes)) * 100)
+                    : (log.ratio || 0);
 
                   return (
                     <tr key={log.id} className="hover:bg-surface-low/60 transition-colors font-mono">
@@ -1045,7 +1048,7 @@ export default function AdminPage({ records = [], onClearHistory }) {
                         {formatBytes(compBytes)}
                       </td>
                       <td className="p-3 font-bold text-emerald-700 whitespace-nowrap">
-                        {log.ratio ? `${log.ratio.toFixed(1)}% saved` : 'Converted'}
+                        {computedRatio > 0 ? `${computedRatio.toFixed(1)}% saved` : (origBytes === compBytes && origBytes > 0 ? '0.0% saved' : 'Converted')}
                       </td>
                     </tr>
                   );
