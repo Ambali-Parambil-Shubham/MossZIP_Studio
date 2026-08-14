@@ -11,6 +11,16 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+function formatUsername(userStr) {
+  if (!userStr) return 'Guest';
+  const trimmed = String(userStr).trim();
+  if (trimmed === 'Guest' || trimmed.startsWith('Client') || trimmed.startsWith('User (')) {
+    return 'Guest';
+  }
+  const clean = trimmed.replace(/\s*\([^)]*\)/g, '').trim();
+  return clean || 'Guest';
+}
+
 
 
 export default function AdminPage({ records = [], onClearHistory }) {
@@ -958,7 +968,7 @@ export default function AdminPage({ records = [], onClearHistory }) {
                         {new Date(log.timestamp).toLocaleString()}
                       </td>
                       <td className="p-3 font-bold text-primary whitespace-nowrap">
-                        {log.user || `User (${log.ip || '127.0.0.1'})`}
+                        {formatUsername(log.user)}
                       </td>
                       <td className="p-3">
                         <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-display bg-primary/10 text-primary border border-primary/20 whitespace-nowrap">

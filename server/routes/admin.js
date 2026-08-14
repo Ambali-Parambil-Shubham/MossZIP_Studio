@@ -95,10 +95,16 @@ export function getCompressionLimits() {
 }
 
 export function addAuditLog(entry) {
+  let cleanUser = entry.user ? String(entry.user).trim() : 'Guest';
+  if (cleanUser === 'Guest' || cleanUser.startsWith('Client') || cleanUser.startsWith('User (')) {
+    cleanUser = 'Guest';
+  }
+  cleanUser = cleanUser.replace(/\s*\([^)]*\)/g, '').trim() || 'Guest';
+
   const log = {
     id: Date.now() + Math.floor(Math.random() * 1000),
     timestamp: new Date().toISOString(),
-    user: entry.user || `User (${entry.ip || '127.0.0.1'})`,
+    user: cleanUser,
     ip: entry.ip || '127.0.0.1',
     type: entry.type || 'Compress',
     file: entry.file || 'payload.bin',

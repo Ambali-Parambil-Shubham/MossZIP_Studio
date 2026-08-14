@@ -154,9 +154,7 @@ export default function App() {
 
   // ── Stable record handler — useCallback prevents children re-rendering ────────
   const handleRecord = useCallback(async (record) => {
-    const activeUserName = user?.full_name
-      ? `${user.full_name} (+91 ${user.mobile || ''})`
-      : 'Authenticated User';
+    const activeUserName = user?.full_name ? user.full_name.trim() : 'Guest';
     const recordWithUser = { ...record, user: activeUserName };
 
     setRecords(prev => {

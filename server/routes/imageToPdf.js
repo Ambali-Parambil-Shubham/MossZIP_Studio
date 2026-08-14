@@ -42,8 +42,8 @@ router.post('/', rateLimiterMiddleware, upload.array('files', 100), validateComp
     }
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
     const userIdentifier = (clientName && clientName !== 'Guest' && clientName !== 'null' && clientName.length > 0)
-      ? `${clientName} (${ip})`
-      : `User (${ip})`;
+      ? clientName
+      : 'Guest';
     const totalOrigBytes = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
 
     addAuditLog({

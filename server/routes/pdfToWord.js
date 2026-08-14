@@ -49,8 +49,8 @@ router.post('/', rateLimiterMiddleware, upload.single('file'), validateCompressi
     }
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
     const userIdentifier = (clientName && clientName !== 'Guest' && clientName !== 'null' && clientName.length > 0)
-      ? `${clientName} (${ip})`
-      : `User (${ip})`;
+      ? clientName
+      : 'Guest';
 
     addAuditLog({
       user: userIdentifier,

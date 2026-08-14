@@ -2,7 +2,7 @@
   {
     "id": 1786473096209,
     "timestamp": "2026-08-11T18:31:36.193Z",
-    "user": "Alex Vance (::ffff:127.0.0.1)",
+    "user": "Alex Vance",
     "ip": "::ffff:127.0.0.1",
     "type": "Huffman Encoding",
     "file": "test_user.txt",
@@ -13,7 +13,7 @@
   {
     "id": 1786473069386,
     "timestamp": "2026-08-11T18:31:08.838Z",
-    "user": "Alex Vance (::ffff:127.0.0.1)",
+    "user": "Alex Vance",
     "ip": "::ffff:127.0.0.1",
     "type": "Huffman Encoding",
     "file": "test_user.txt",
@@ -24,7 +24,7 @@
   {
     "id": 1786303658296,
     "timestamp": "2026-08-09T19:27:38.285Z",
-    "user": "Shubham AP (+91 8698833618)",
+    "user": "Shubham AP",
     "ip": "::1",
     "type": "Compress",
     "file": "WhatsApp Video 2026-07-27 at 10.03.43 AM.mp4",
@@ -35,7 +35,7 @@
   {
     "id": 1786303658347,
     "timestamp": "2026-08-09T19:27:37.534Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "Video Compression",
     "file": "WhatsApp Video 2026-07-27 at 10.03.43 AM.mp4",
@@ -46,7 +46,7 @@
   {
     "id": 1786302683622,
     "timestamp": "2026-08-09T19:11:22.834Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "Video Compression",
     "file": "WhatsApp Video 2026-07-27.mp4",
@@ -57,7 +57,7 @@
   {
     "id": 1785654351419,
     "timestamp": "2026-08-02T07:05:51.028Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "PDF Compression",
     "file": "BEEE Unit 2.1.pdf",
@@ -68,7 +68,7 @@
   {
     "id": 1785652594452,
     "timestamp": "2026-08-02T06:36:33.893Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "Merge PDF",
     "file": "2 PDFs Merged",
@@ -79,7 +79,7 @@
   {
     "id": 1785652594714,
     "timestamp": "2026-08-02T06:36:33.758Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "PDF to Word",
     "file": "test_doc.pdf",
@@ -90,7 +90,7 @@
   {
     "id": 1785652594437,
     "timestamp": "2026-08-02T06:36:33.473Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "Image to PDF",
     "file": "1 Images",
@@ -101,7 +101,7 @@
   {
     "id": 1785652594273,
     "timestamp": "2026-08-02T06:36:33.426Z",
-    "user": "Client (::1)",
+    "user": "Guest",
     "ip": "::1",
     "type": "Huffman Encoding",
     "file": "sample.txt",
