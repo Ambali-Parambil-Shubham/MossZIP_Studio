@@ -138,7 +138,7 @@ async function generateDocxFromPdf(pdfFile) {
 }
 
 export default function PdfToWordPage({ onRecord }) {
-  const { requireAuth, showToast } = useAuth();
+  const { user, requireAuth, showToast } = useAuth();
   const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [resultBlob, setResultBlob] = useState(null);

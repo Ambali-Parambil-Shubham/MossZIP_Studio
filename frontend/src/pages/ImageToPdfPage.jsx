@@ -81,7 +81,7 @@ async function generatePdfFromImages(files) {
 }
 
 export default function ImageToPdfPage({ onRecord }) {
-  const { requireAuth, showToast } = useAuth();
+  const { user, requireAuth, showToast } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [resultBlob, setResultBlob] = useState(null);

@@ -14,7 +14,7 @@ function formatBytes(bytes) {
 }
 
 export default function SplitPdfPage({ onRecord }) {
-  const { requireAuth, showToast } = useAuth();
+  const { user, requireAuth, showToast } = useAuth();
   const [selectedFile, setSelectedFile] = useState(null);
   const [totalPages, setTotalPages] = useState(0);
   const [splitMode, setSplitMode] = useState('range'); // 'range' | 'single'
