@@ -127,7 +127,7 @@ export default function AuthModal() {
       }
 
       const { data, error: supaErr } = await query;
-      const match = data ? data.find(u => u.mobile !== 'SYSTEM_LIMITS') : null;
+      const match = data && data.length > 0 ? data[0] : null;
       if (!supaErr && match) {
         setUserInfo({
           id: match.id,

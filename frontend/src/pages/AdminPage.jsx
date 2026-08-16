@@ -98,27 +98,21 @@ export default function AdminPage({ records = [], onClearHistory }) {
 
   // Fetch Live Server Limits on Load
   const fetchServerLimits = async () => {
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('app_users').select('*').eq('mobile', 'SYSTEM_LIMITS');
-        if (data && data.length > 0 && data[0].mpin) {
-          const cloudLimits = JSON.parse(data[0].mpin);
-          if (cloudLimits && cloudLimits.max_total_upload_mb) {
-            setLimits(cloudLimits);
-            localStorage.setItem('mosszip_admin_limits', JSON.stringify(cloudLimits));
-            const currentMb = cloudLimits.max_total_upload_mb || 1024;
-            if (currentMb >= 1024 && currentMb % 1024 === 0) {
-              setUploadUnit('GB');
-              setUploadSizeVal((currentMb / 1024).toString());
-            } else {
-              setUploadUnit('MB');
-              setUploadSizeVal(currentMb.toString());
-            }
-            return;
-          }
+    try {
+      const saved = localStorage.getItem('mosszip_admin_limits');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setLimits(parsed);
+        const currentMb = parsed.max_total_upload_mb || 1024;
+        if (currentMb >= 1024 && currentMb % 1024 === 0) {
+          setUploadUnit('GB');
+          setUploadSizeVal((currentMb / 1024).toString());
+        } else {
+          setUploadUnit('MB');
+          setUploadSizeVal(currentMb.toString());
         }
-      } catch (e) {}
-    }
+      }
+    } catch (e) {}
 
     try {
       const res = await fetch(getApiUrl('/api/admin/limits'));
@@ -338,19 +332,7 @@ export default function AdminPage({ records = [], onClearHistory }) {
     const limitDisplayLabel = uploadUnit === 'GB' ? `${rawNum} GB` : `${finalMb} MB`;
     setLimitsMsg(`Compression limits updated to ${limitDisplayLabel} & synced live!`);
 
-    // 2. Persist to Supabase Cloud for universal multi-device sync
-    if (supabase) {
-      try {
-        await supabase.from('app_users').upsert({
-          mobile: 'SYSTEM_LIMITS',
-          full_name: 'System Limits Configuration',
-          email: 'config@mosszip.sys',
-          mpin: JSON.stringify(updatedLimits),
-        }, { onConflict: 'mobile' });
-      } catch (e) {}
-    }
-
-    // 3. Persist to server API if server is reachable
+    // 2. Persist to server API if server is reachable
     try {
       await fetch(getApiUrl('/api/admin/limits'), {
         method: 'POST',

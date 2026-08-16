@@ -101,50 +101,25 @@ export default function ImageToPdfPage({ onRecord }) {
     };
   });
 
-  const loadLimitsFromApi = useCallback(async () => {
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('app_users').select('*').eq('mobile', 'SYSTEM_LIMITS');
-        if (data && data.length > 0 && data[0].mpin) {
-          const cloudLimits = JSON.parse(data[0].mpin);
-          if (cloudLimits && cloudLimits.images_per_request) {
-            setLimits(cloudLimits);
-            localStorage.setItem('mosszip_admin_limits', JSON.stringify(cloudLimits));
-            return;
-          }
-        }
-      } catch (e) {}
-    }
-
-    try {
-      const res = await fetch(getApiUrl('/api/admin/limits'));
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.limits) {
-          setLimits(data.limits);
-          localStorage.setItem('mosszip_admin_limits', JSON.stringify(data.limits));
-          return;
-        }
-      }
-    } catch (e) {}
-
+  const loadLimitsFromStorage = useCallback(() => {
     try {
       const saved = localStorage.getItem('mosszip_admin_limits');
-      if (saved) setLimits(JSON.parse(saved));
+      if (saved) {
+        setLimits(JSON.parse(saved));
+      }
     } catch (e) {}
   }, []);
 
   useEffect(() => {
-    loadLimitsFromApi();
-    window.addEventListener('mosszip_limits_updated', loadLimitsFromApi);
-    window.addEventListener('storage', loadLimitsFromApi);
-    const interval = setInterval(loadLimitsFromApi, 2500);
+    loadLimitsFromStorage();
+    const handleUpdate = () => loadLimitsFromStorage();
+    window.addEventListener('mosszip_limits_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
     return () => {
-      window.removeEventListener('mosszip_limits_updated', loadLimitsFromApi);
-      window.removeEventListener('storage', loadLimitsFromApi);
-      clearInterval(interval);
+      window.removeEventListener('mosszip_limits_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
     };
-  }, [loadLimitsFromApi]);
+  }, [loadLimitsFromStorage]);
 
   const handleFiles = useCallback((files) => {
     const validFiles = Array.from(files).filter(f => f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp)$/i.test(f.name));

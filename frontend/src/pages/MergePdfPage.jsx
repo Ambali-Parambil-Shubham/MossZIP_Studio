@@ -33,38 +33,25 @@ export default function MergePdfPage({ onRecord }) {
     };
   });
 
-  const loadLimitsFromApi = useCallback(() => {
-    fetch(getApiUrl('/api/admin/limits'))
-      .then(res => {
-        const contentType = res.headers.get('content-type');
-        if (res.ok && contentType && contentType.includes('application/json')) {
-          return res.json();
-        }
-        throw new Error('Non-JSON response');
-      })
-      .then(data => {
-        if (data && data.limits) {
-          setLimits(data.limits);
-          localStorage.setItem('mosszip_admin_limits', JSON.stringify(data.limits));
-        }
-      })
-      .catch(() => {
-        try {
-          const saved = localStorage.getItem('mosszip_admin_limits');
-          if (saved) setLimits(JSON.parse(saved));
-        } catch (e) {}
-      });
+  const loadLimitsFromStorage = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('mosszip_admin_limits');
+      if (saved) {
+        setLimits(JSON.parse(saved));
+      }
+    } catch (e) {}
   }, []);
 
   useEffect(() => {
-    loadLimitsFromApi();
-    window.addEventListener('mosszip_limits_updated', loadLimitsFromApi);
-    window.addEventListener('storage', loadLimitsFromApi);
+    loadLimitsFromStorage();
+    const handleUpdate = () => loadLimitsFromStorage();
+    window.addEventListener('mosszip_limits_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
     return () => {
-      window.removeEventListener('mosszip_limits_updated', loadLimitsFromApi);
-      window.removeEventListener('storage', loadLimitsFromApi);
+      window.removeEventListener('mosszip_limits_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
     };
-  }, [loadLimitsFromApi]);
+  }, [loadLimitsFromStorage]);
 
   const handleFiles = useCallback((files) => {
     const validFiles = Array.from(files).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));

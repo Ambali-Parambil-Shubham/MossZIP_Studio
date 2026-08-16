@@ -65,64 +65,30 @@ export default function CompressorPage({ onRecord, onResult, preserveFormat, set
 
   const now = () => new Date().toLocaleTimeString('en-US', { hour12: false });
 
-  const loadLimitsFromApi = useCallback(async () => {
-    // 1. Check Supabase Cloud app_users table first for live global admin settings
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('app_users').select('*').eq('mobile', 'SYSTEM_LIMITS');
-        if (data && data.length > 0 && data[0].mpin) {
-          const cloudLimits = JSON.parse(data[0].mpin);
-          if (cloudLimits && cloudLimits.max_total_upload_mb) {
-            setLimits(cloudLimits);
-            localStorage.setItem('mosszip_admin_limits', JSON.stringify(cloudLimits));
-            return;
-          }
-        }
-      } catch (e) {}
-    }
-
-    // 2. Try central API
-    try {
-      const res = await fetch(getApiUrl('/api/admin/limits'));
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.limits) {
-            setLimits(data.limits);
-            localStorage.setItem('mosszip_admin_limits', JSON.stringify(data.limits));
-            return;
-          }
-        }
-      }
-    } catch (e) {}
-
-    // 3. Local fallback
+  const loadLimitsFromStorage = useCallback(() => {
     try {
       const saved = localStorage.getItem('mosszip_admin_limits');
-      if (saved) setLimits(JSON.parse(saved));
+      if (saved) {
+        setLimits(JSON.parse(saved));
+      }
     } catch (e) {}
   }, []);
 
   useEffect(() => {
-    loadLimitsFromApi();
+    loadLimitsFromStorage();
 
     const handleUpdate = () => {
-      loadLimitsFromApi();
+      loadLimitsFromStorage();
     };
 
     window.addEventListener('mosszip_limits_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
-    window.addEventListener('focus', handleUpdate);
-    const interval = setInterval(loadLimitsFromApi, 2500);
 
     return () => {
       window.removeEventListener('mosszip_limits_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
-      window.removeEventListener('focus', handleUpdate);
-      clearInterval(interval);
     };
-  }, [loadLimitsFromApi]);
+  }, [loadLimitsFromStorage]);
 
   const handleFile = useCallback((info) => {
     setLimitToast(null);
