@@ -4,78 +4,108 @@ import path from 'path';
 import fs from 'fs';
 import { convertPdfToWord } from '../services/pdfToWordService.js';
 import { validateCompressionLimits, rateLimiterMiddleware } from '../middleware/limitsMiddleware.js';
+import { fileSecurityMiddleware } from '../middleware/securityMiddleware.js';
 import { addAuditLog } from './admin.js';
 
 const router = express.Router();
-
-const uploadDir = path.join(process.cwd(), 'server', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, `pdf_${Date.now()}_${Math.random().toString(36).substring(7)}.pdf`),
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 router.post('/', rateLimiterMiddleware, upload.single('file'), validateCompressionLimits, async (req, res) => {
-  const uploadedFile = req.file;
-
   try {
-    if (!uploadedFile) {
-      return res.status(400).json({
-        success: false,
-        message: 'No PDF file uploaded.',
+    if (!req.file) {
+      return res.status(400).json({ status: 'error', message: 'No PDF file uploaded.' });
+    }
+
+    const rawUserName = req.headers['x-user-name'] ? decodeURIComponent(req.headers['x-user-name']) : (req.body?.userName || 'Guest');
+    const pdfBuffer = req.file.buffer;
+
+    let parsedText = '';
+    let numPages = 1;
+
+    try {
+      const data = await pdfParse(pdfBuffer);
+      parsedText = data.text || '';
+      numPages = data.numpages || 1;
+    } catch (parseErr) {
+      console.warn('[PdfToWord] PDF parse notice:', parseErr.message);
+    }
+
+    const paragraphs = [];
+    const lines = parsedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    if (lines.length > 0) {
+      lines.forEach(line => {
+        paragraphs.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: line,
+                font: 'Calibri',
+                size: 24, // 12pt
+              }),
+            ],
+            spacing: { after: 120 },
+          })
+        );
       });
+    } else {
+      // Scanned/Image PDF notice fallback page
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `[Scanned PDF Document — ${numPages} Page(s)]`,
+              bold: true,
+              font: 'Calibri',
+              size: 28,
+            }),
+          ],
+          spacing: { after: 200 },
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `Original File: ${req.file.originalname}`,
+              italic: true,
+              font: 'Calibri',
+              size: 22,
+            }),
+          ],
+          spacing: { after: 120 },
+        })
+      );
     }
 
-    const fileBuffer = await fs.promises.readFile(uploadedFile.path);
-    const docxBuffer = await convertPdfToWord(fileBuffer);
+    const doc = new Document({
+      sections: [
+        {
+          properties: {},
+          children: paragraphs,
+        },
+      ],
+    });
 
-    const origName = uploadedFile.originalname || 'document.pdf';
-    const baseName = origName.includes('.')
-      ? origName.slice(0, origName.lastIndexOf('.'))
-      : 'document';
-
-    const rawClientUser = req.headers['x-user-name'] || req.body?.userName || req.headers['user-name'];
-    let clientName = null;
-    if (rawClientUser && typeof rawClientUser === 'string') {
-      try { clientName = decodeURIComponent(rawClientUser).trim(); } catch (e) { clientName = rawClientUser.trim(); }
-    }
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
-    const userIdentifier = (clientName && clientName !== 'Guest' && clientName !== 'null' && clientName.length > 0)
-      ? clientName
-      : 'Guest';
+    const docxBuffer = await Packer.toBuffer(doc);
 
     addAuditLog({
-      user: userIdentifier,
-      ip: ip,
+      user: rawUserName,
       type: 'PDF to Word',
-      file: origName,
-      originalBits: fileBuffer.length * 8,
+      file: `${req.file.originalname} -> .docx`,
+      originalBits: req.file.size * 8,
       compressedBits: docxBuffer.length * 8,
-      ratio: 0,
+      ratio: Math.max(0, ((1 - docxBuffer.length / req.file.size) * 100)),
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(baseName)}-converted.docx"`);
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(req.file.originalname.replace(/\.pdf$/i, '.docx'))}"`);
     return res.send(docxBuffer);
   } catch (err) {
-    console.error('[POST /api/pdf-to-word] Error:', err);
-    return res.status(500).json({
-      success: false,
-      message: err.message || 'PDF to Word conversion failed.',
-    });
-  } finally {
-    if (uploadedFile?.path && fs.existsSync(uploadedFile.path)) {
-      try { await fs.promises.unlink(uploadedFile.path); } catch (e) {}
-    }
+    console.error('[PdfToWord Error]:', err);
+    return res.status(500).json({ status: 'error', message: 'Failed to convert PDF to Word document.' });
   }
 });
 
