@@ -50,7 +50,7 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
     // Verify output integrity and non-zero size
     if (fs.existsSync(tempOutputPath)) {
       const outStat = fs.statSync(tempOutputPath);
-      if (outStat.size > 1024 && outStat.size < inSize) {
+      if (outStat && outStat.size > 1024) {
         return tempOutputPath;
       }
     }
@@ -58,6 +58,9 @@ export async function compressVideoFile(tempInputPath, extension = 'mp4') {
     return tempOutputPath;
   } catch (err) {
     console.error('[VideoCompressor] FFmpeg compression error:', err);
+    if (fs.existsSync(tempOutputPath)) {
+      try { fs.unlinkSync(tempOutputPath); } catch (e) {}
+    }
     return tempInputPath;
   }
 }
