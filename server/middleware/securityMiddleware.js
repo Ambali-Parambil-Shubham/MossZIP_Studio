@@ -150,7 +150,14 @@ export function fileSecurityMiddleware(req, res, next) {
 
   // Validate MIME type & Extension
   const ext = (path.extname(file.originalname) || '').toLowerCase().replace('.', '');
-  const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', '3gp', 'docx', 'pptx', 'xlsx', 'txt', 'huff'];
+  const allowedExts = [
+    'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'svg', 'avif',
+    'pdf',
+    'mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', '3gp', 'flv', 'ts', 'mpg', 'mpeg',
+    'mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus', 'wma', 'aiff', 'mka',
+    'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'epub',
+    'txt', 'csv', 'json', 'xml', 'md', 'log', 'huff'
+  ];
 
   if (!allowedExts.includes(ext)) {
     if (file.path && fs.existsSync(file.path)) {

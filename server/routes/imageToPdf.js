@@ -45,6 +45,14 @@ router.post('/', rateLimiterMiddleware, upload.array('files', 100), validateComp
       ? clientName
       : 'Guest';
     const totalOrigBytes = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
+    const pdfBuffer = await convertImagesToPdf(uploadedFiles);
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate PDF from images.',
+      });
+    }
 
     addAuditLog({
       user: userIdentifier,

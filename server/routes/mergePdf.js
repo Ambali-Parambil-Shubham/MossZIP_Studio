@@ -54,6 +54,14 @@ router.post('/', rateLimiterMiddleware, upload.array('files', 100), validateComp
       ? clientName
       : 'Guest';
     const totalOrigBytes = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
+    const mergedBuffer = await mergePdfs(uploadedFiles);
+
+    if (!mergedBuffer || mergedBuffer.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to merge PDF files.',
+      });
+    }
 
     addAuditLog({
       user: userIdentifier,
