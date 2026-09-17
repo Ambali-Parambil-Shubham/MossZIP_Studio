@@ -113,9 +113,6 @@ export default function MergePdfPage({ onRecord }) {
       const response = await fetch(getApiUrl('/api/merge-pdfs'), {
         method: 'POST',
         body: formData,
-        headers: {
-          ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
-        }
       });
 
       if (response.ok) {

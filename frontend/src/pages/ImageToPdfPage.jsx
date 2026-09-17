@@ -178,9 +178,6 @@ export default function ImageToPdfPage({ onRecord }) {
       const response = await fetch(getApiUrl('/api/image-to-pdf'), {
         method: 'POST',
         body: formData,
-        headers: {
-          ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
-        }
       });
 
       if (response.ok) {

@@ -27,7 +27,17 @@ app.use(setSecurityHeadersMiddleware);
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'X-Original-Size', 'X-Compressed-Size'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'x-admin-key',
+    'x-user-name',
+    'X-Original-Size',
+    'X-Compressed-Size',
+    'Accept',
+    'Origin',
+    'X-Requested-With',
+  ],
   exposedHeaders: ['X-Original-Size', 'X-Compressed-Size', 'Content-Disposition'],
 }));
 app.options('*', cors());

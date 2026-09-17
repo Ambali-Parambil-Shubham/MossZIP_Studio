@@ -248,9 +248,6 @@ export default function PdfToWordPage({ onRecord }) {
       const response = await fetch(getApiUrl('/api/pdf-to-word'), {
         method: 'POST',
         body: formData,
-        headers: {
-          ...(currentUserName ? { 'x-user-name': encodeURIComponent(currentUserName) } : {})
-        }
       });
 
       if (response.ok) {
@@ -258,6 +255,9 @@ export default function PdfToWordPage({ onRecord }) {
         if (blob && blob.size > 100) {
           docxBlob = blob;
         }
+      } else {
+        const errJson = await response.json().catch(() => null);
+        console.warn('[PdfToWordPage] Server returned error:', errJson);
       }
     } catch (err) {
       console.warn('[PdfToWordPage] Server notice, engaging client fallback:', err);
@@ -268,7 +268,7 @@ export default function PdfToWordPage({ onRecord }) {
     }
 
     if (!docxBlob || docxBlob.size === 0) {
-      setErrorMsg('Could not convert PDF to Word document.');
+      setErrorMsg('Could not convert PDF to Word document. Please ensure the file is valid and not password-protected.');
       setLoading(false);
       return;
     }
