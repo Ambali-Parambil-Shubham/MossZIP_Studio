@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
-import JSZip from 'jszip';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun, PageBreak } from 'docx';
 import { getApiUrl } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { downloadFile } from '../lib/downloadFile.js';
@@ -21,36 +21,27 @@ function formatBytes(bytes) {
 }
 
 /**
- * Strict XML 1.0 Sanitizer for 100% Microsoft Word Compatibility
+ * Adaptive Client-Side PDF-to-Word Engine
+ * 1. For text PDFs: extracts Unicode text and builds formatted Word headings and paragraphs.
+ * 2. For presentations, scanned notes, circuits & equations (like BEEE notes):
+ *    renders every page on an in-browser canvas and embeds high-res figures with proper page breaks.
  */
-function sanitizeXmlText(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove invalid XML control characters
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/**
- * Production-Grade PDF Text Extraction Engine using PDF.js
- * Extracts genuine, human-readable Unicode text from all pages with CMap decoding.
- */
-async function extractTextWithPdfJs(arrayBuffer) {
+async function generateDocxFromPdf(pdfFile) {
   try {
+    const arrayBuffer = await pdfFile.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(arrayBuffer),
       useSystemFonts: true,
     });
     const pdf = await loadingTask.promise;
+
+    // ── Phase 1: Try Text Extraction ──────────────────────────────────────────
+    let totalChars = 0;
     const pagesText = [];
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      
       let lastY = null;
       let currentLine = '';
       const pageLines = [];
@@ -68,91 +59,114 @@ async function extractTextWithPdfJs(arrayBuffer) {
       }
       if (currentLine.trim()) pageLines.push(currentLine.trim());
 
-      if (pageLines.length > 0) {
-        pagesText.push({ pageNum: i, lines: pageLines });
-      }
+      const joined = pageLines.join('\n');
+      totalChars += joined.trim().length;
+      pagesText.push({ pageNum: i, lines: pageLines });
     }
-    return { numPages: pdf.numPages, pagesText };
-  } catch (err) {
-    console.warn('[PdfToWordPage] PDF.js extraction notice:', err);
-    return null;
-  }
-}
 
-async function generateDocxFromPdf(pdfFile) {
-  try {
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const extracted = await extractTextWithPdfJs(arrayBuffer);
-    
-    let textLines = [];
-    const pageCount = extracted?.numPages || 1;
-
-    textLines.push(`Converted Document: ${pdfFile.name}`);
-    textLines.push(`Total Pages: ${pageCount}`);
-    textLines.push('----------------------------------------------------');
-    textLines.push('');
-
-    let hasAnyText = false;
-    if (extracted && extracted.pagesText && extracted.pagesText.length > 0) {
-      for (const page of extracted.pagesText) {
-        textLines.push(`--- Page ${page.pageNum} ---`);
-        textLines.push('');
-        for (const line of page.lines) {
-          textLines.push(line);
+    // If substantial selectable text is present (>= 50 chars), build editable text paragraphs
+    if (totalChars >= 50) {
+      const paragraphs = [];
+      for (const page of pagesText) {
+        if (pdf.numPages > 1) {
+          paragraphs.push(
+            new Paragraph({
+              text: `Page ${page.pageNum}`,
+              heading: HeadingLevel.HEADING_2,
+              spacing: { before: 200, after: 80 },
+            })
+          );
         }
-        textLines.push('');
-        hasAnyText = true;
+        for (const line of page.lines) {
+          if (!line) continue;
+          if (line.length < 50 && /[A-Za-z]/.test(line) && line === line.toUpperCase()) {
+            paragraphs.push(
+              new Paragraph({
+                text: line,
+                heading: HeadingLevel.HEADING_1,
+                spacing: { before: 180, after: 80 },
+              })
+            );
+          } else {
+            paragraphs.push(
+              new Paragraph({
+                children: [new TextRun({ text: line, size: 24, font: 'Calibri' })],
+                spacing: { after: 120 },
+              })
+            );
+          }
+        }
+        if (page.pageNum < pdf.numPages) {
+          paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
+        }
+      }
+
+      if (paragraphs.length > 0) {
+        const doc = new Document({
+          sections: [{
+            properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
+            children: paragraphs,
+          }],
+        });
+        return await Packer.toBlob(doc);
       }
     }
 
-    if (!hasAnyText) {
-      return null;
-    }
+    // ── Phase 2: Visual Slide / Scanned Document Reconstruction ──────────────
+    // When text streams are absent (diagrams, circuits, slides), render each page to canvas
+    const elements = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-    const paragraphXml = textLines.map(line => {
-      const sanitized = sanitizeXmlText(line);
-      if (line.startsWith('Converted Document') || line.startsWith('Total Pages')) {
-        return `<w:p><w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">${sanitized}</w:t></w:r></w:p>`;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+      if (!blob) continue;
+      const buf = await blob.arrayBuffer();
+      const uint8 = new Uint8Array(buf);
+
+      const targetWidth = 595;
+      const targetHeight = Math.round((viewport.height / viewport.width) * targetWidth);
+
+      elements.push(
+        new Paragraph({
+          children: [
+            new ImageRun({
+              data: uint8,
+              transformation: { width: targetWidth, height: targetHeight },
+            }),
+          ],
+          spacing: { after: 120 },
+        })
+      );
+
+      if (i < pdf.numPages) {
+        elements.push(new Paragraph({ children: [new PageBreak()] }));
       }
-      return `<w:p><w:r><w:t xml:space="preserve">${sanitized}</w:t></w:r></w:p>`;
-    }).join('');
-
-    const zip = new JSZip();
-
-    // 1. Content Types XML
-    zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`);
-
-    // 2. Package Relationships
-    zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`);
-
-    // 3. Word Document Relationships
-    zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-</Relationships>`);
-
-    // 4. Main Document Body XML
-    zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    ${paragraphXml}
-  </w:body>
-</w:document>`);
-
-    const docxBytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-    if (docxBytes && docxBytes.byteLength > 0) {
-      return new Blob([docxBytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     }
+
+    if (elements.length > 0) {
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } },
+          },
+          children: elements,
+        }],
+      });
+      return await Packer.toBlob(doc);
+    }
+
     return null;
   } catch (err) {
-    console.error('In-browser docx generation error:', err);
+    console.error('[PdfToWordPage] Client adaptive engine error:', err);
     return null;
   }
 }
@@ -236,6 +250,7 @@ export default function PdfToWordPage({ onRecord }) {
     setResultBlob(null);
 
     let docxBlob = null;
+    let serverNotice = null;
 
     try {
       const currentUserName = user?.full_name || user?.email || (localStorage.getItem('mosszip_user') ? JSON.parse(localStorage.getItem('mosszip_user'))?.full_name : null);
@@ -245,7 +260,8 @@ export default function PdfToWordPage({ onRecord }) {
         formData.append('userName', currentUserName);
       }
 
-      const response = await fetch(getApiUrl('/api/pdf-to-word'), {
+      const targetUrl = getApiUrl('/api/pdf-to-word');
+      const response = await fetch(targetUrl, {
         method: 'POST',
         body: formData,
       });
@@ -254,21 +270,24 @@ export default function PdfToWordPage({ onRecord }) {
         const blob = await response.blob();
         if (blob && blob.size > 100) {
           docxBlob = blob;
+        } else {
+          serverNotice = 'Server returned empty payload';
         }
       } else {
         const errJson = await response.json().catch(() => null);
-        console.warn('[PdfToWordPage] Server returned error:', errJson);
+        serverNotice = errJson?.message || `Server HTTP ${response.status}`;
       }
     } catch (err) {
-      console.warn('[PdfToWordPage] Server notice, engaging client fallback:', err);
+      serverNotice = `Network notice (${err.message})`;
     }
 
     if (!docxBlob) {
+      console.info('[PdfToWordPage] Running high-fidelity client converter. Server notice:', serverNotice);
       docxBlob = await generateDocxFromPdf(selectedFile);
     }
 
     if (!docxBlob || docxBlob.size === 0) {
-      setErrorMsg('Could not convert PDF to Word document. Please ensure the file is valid and not password-protected.');
+      setErrorMsg(`Could not convert PDF to Word document.${serverNotice ? ` (${serverNotice})` : ''}`);
       setLoading(false);
       return;
     }

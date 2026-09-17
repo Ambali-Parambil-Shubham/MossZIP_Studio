@@ -42,6 +42,14 @@ app.use(cors({
 }));
 app.options('*', cors());
 
+// Live API Request Logger
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api')) {
+    console.log(`[HTTP ${req.method}] ${req.url} (Origin: ${req.headers.origin || 'same-origin'}, IP: ${req.ip})`);
+  }
+  next();
+});
+
 app.use(compression());
 app.use(express.json({ limit: '200mb' }));
 app.use(express.urlencoded({ extended: true, limit: '200mb' }));
