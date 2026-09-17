@@ -1,10 +1,10 @@
 import libre from 'libreoffice-convert';
-import fs from 'fs';
 import { createRequire } from 'module';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun, PageBreak } from 'docx';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 const require = createRequire(import.meta.url);
-const pdfParseModule = require('pdf-parse');
+const { createCanvas } = require('canvas');
 
 const convertAsync = (buf, format, filter) => new Promise((resolve, reject) => {
   libre.convert(buf, format, filter, (err, done) => {
@@ -13,26 +13,105 @@ const convertAsync = (buf, format, filter) => new Promise((resolve, reject) => {
   });
 });
 
-async function extractPdfText(pdfBuffer) {
-  if (typeof pdfParseModule === 'function') {
-    const res = await pdfParseModule(pdfBuffer);
-    return { text: res.text || '', numPages: res.numpages || 1 };
-  }
-
-  if (pdfParseModule && pdfParseModule.PDFParse) {
-    const parser = new pdfParseModule.PDFParse({ data: pdfBuffer });
-    await parser.load();
-    const res = await parser.getText();
-    return { text: res.text || '', numPages: res.total || 1 };
-  }
-
-  return { text: '', numPages: 1 };
+/**
+ * Loads PDF document using PDF.js
+ */
+async function loadPdfDocument(pdfBuffer) {
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(pdfBuffer),
+    disableWorker: true,
+  });
+  return await loadingTask.promise;
 }
 
 /**
- * Converts PDF to an editable Microsoft Word (.docx) document.
+ * Extracts selectable Unicode text from all pages
+ */
+async function extractTextFromPdf(pdfDoc) {
+  const pagesText = [];
+  let totalChars = 0;
+
+  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+    const page = await pdfDoc.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const lines = [];
+    let lastY = null;
+    let currentLine = '';
+
+    for (const item of textContent.items) {
+      if (!item.str) continue;
+      const currentY = item.transform ? Math.round(item.transform[5]) : null;
+      if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 5) {
+        if (currentLine.trim()) lines.push(currentLine.trim());
+        currentLine = item.str;
+      } else {
+        currentLine += (currentLine ? ' ' : '') + item.str;
+      }
+      lastY = currentY;
+    }
+    if (currentLine.trim()) lines.push(currentLine.trim());
+
+    const pageJoined = lines.join('\n');
+    totalChars += pageJoined.trim().length;
+    pagesText.push({ pageNum, lines });
+  }
+
+  return { totalChars, pagesText };
+}
+
+/**
+ * Renders every page of a slide deck, presentation, or scanned PDF as high-resolution
+ * graphics embedded directly into Microsoft Word with proper page breaks.
+ */
+async function renderPdfPagesToWordImages(pdfDoc) {
+  const elements = [];
+
+  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+    const page = await pdfDoc.getPage(pageNum);
+    // Scale 1.5 gives crisp ~150 DPI resolution for slides, circuits, and formulas
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = createCanvas(viewport.width, viewport.height);
+    const ctx = canvas.getContext('2d');
+
+    // Ensure clean white background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.85 });
+
+    // Standard Word page width ~ 595pt
+    const targetWidth = 595;
+    const targetHeight = Math.round((viewport.height / viewport.width) * targetWidth);
+
+    elements.push(
+      new Paragraph({
+        children: [
+          new ImageRun({
+            data: imgBuffer,
+            transformation: { width: targetWidth, height: targetHeight },
+          }),
+        ],
+        spacing: { after: 120 },
+      })
+    );
+
+    if (pageNum < pdfDoc.numPages) {
+      elements.push(
+        new Paragraph({
+          children: [new PageBreak()],
+        })
+      );
+    }
+  }
+
+  return elements;
+}
+
+/**
+ * Converts PDF to a rich Microsoft Word (.docx) document.
  * Primary: LibreOffice Headless conversion.
- * Fallback: PDF text extraction + docx Document builder.
+ * Fallback: Adaptive Hybrid selectable text extraction + full-fidelity visual page reconstruction.
  */
 export async function convertPdfToWord(pdfBuffer) {
   // Primary Attempt: LibreOffice Convert
@@ -42,87 +121,85 @@ export async function convertPdfToWord(pdfBuffer) {
       return docxBuffer;
     }
   } catch (libreErr) {
-    console.warn('[PDFToWord] LibreOffice binary not present, engaging docx fallback engine.');
+    console.warn('[PDFToWord] LibreOffice binary not present, engaging adaptive hybrid fallback engine.');
   }
 
-  // Fallback: Text extraction + docx Document Builder
+  // Fallback: Adaptive Hybrid Engine
   try {
-    const { text: rawText, numPages } = await extractPdfText(pdfBuffer);
-    const lines = rawText.split('\n');
+    const pdfDoc = await loadPdfDocument(pdfBuffer);
+    const { totalChars, pagesText } = await extractTextFromPdf(pdfDoc);
 
-    const paragraphs = [];
+    // 1. If substantial selectable text is present (>= 50 characters), reconstruct editable paragraphs
+    if (totalChars >= 50) {
+      const paragraphs = [];
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line || line.startsWith('-- ') && line.endsWith(' --')) {
-        continue;
+      for (const page of pagesText) {
+        if (pdfDoc.numPages > 1) {
+          paragraphs.push(
+            new Paragraph({
+              text: `Page ${page.pageNum}`,
+              heading: HeadingLevel.HEADING_2,
+              spacing: { before: 200, after: 80 },
+            })
+          );
+        }
+
+        for (const line of page.lines) {
+          if (!line) continue;
+
+          // Detect potential headings
+          if (line.length < 50 && /[A-Za-z]/.test(line) && line === line.toUpperCase()) {
+            paragraphs.push(
+              new Paragraph({
+                text: line,
+                heading: HeadingLevel.HEADING_1,
+                spacing: { before: 180, after: 80 },
+              })
+            );
+          } else {
+            paragraphs.push(
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: line,
+                    size: 24, // 12pt font
+                    font: 'Calibri',
+                  }),
+                ],
+                spacing: { after: 120 },
+              })
+            );
+          }
+        }
+
+        if (page.pageNum < pdfDoc.numPages) {
+          paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
+        }
       }
 
-      // Identify potential headings vs regular text
-      if (line.length < 50 && /[A-Za-z]/.test(line) && (line === line.toUpperCase() || i === 0)) {
-        paragraphs.push(
-          new Paragraph({
-            text: line,
-            heading: HeadingLevel.HEADING_1,
-            spacing: { before: 200, after: 100 },
-          })
-        );
-      } else {
-        paragraphs.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: line,
-                size: 24, // 12pt font
-                font: 'Calibri',
-              }),
-            ],
-            spacing: { after: 120 },
-          })
-        );
+      if (paragraphs.length > 0) {
+        const doc = new Document({
+          sections: [{ properties: {}, children: paragraphs }],
+        });
+        const docxBytes = await Packer.toBuffer(doc);
+        return Buffer.from(docxBytes);
       }
     }
 
-    // No selectable text found: this PDF is likely scanned/image-based and
-    // requires OCR, which this pipeline does not perform. Say so honestly
-    // instead of returning a misleading blank/generic document.
-    const noticeParagraphs = [
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: 'No selectable text was found in this PDF.',
-            bold: true,
-            font: 'Calibri',
-            size: 26,
-          }),
-        ],
-        spacing: { after: 120 },
-      }),
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: `This document (${numPages} page${numPages === 1 ? '' : 's'}) appears to be scanned or image-based. Automatic text conversion requires OCR, which is not currently available, so the original layout could not be reconstructed as editable text.`,
-            font: 'Calibri',
-            size: 22,
-          }),
-        ],
-        spacing: { after: 120 },
-      }),
-    ];
+    // 2. Scanned notes, presentation slides, diagrams, and math formulas (like BEEE notes):
+    // Render high-resolution visual pages directly into Word!
+    const visualElements = await renderPdfPagesToWordImages(pdfDoc);
+    if (visualElements && visualElements.length > 0) {
+      const doc = new Document({
+        sections: [{ properties: {}, children: visualElements }],
+      });
+      const docxBytes = await Packer.toBuffer(doc);
+      return Buffer.from(docxBytes);
+    }
 
-    const doc = new Document({
-      sections: [
-        {
-          properties: {},
-          children: paragraphs.length > 0 ? paragraphs : noticeParagraphs,
-        },
-      ],
-    });
-
-    const docxBytes = await Packer.toBuffer(doc);
-    return Buffer.from(docxBytes);
+    throw new Error('Could not extract text or render pages from PDF.');
   } catch (err) {
-    console.error('[PDFToWord] Fallback error:', err);
+    console.error('[PDFToWord] Adaptive fallback error:', err);
     throw new Error('Failed to convert PDF to Word document.');
   }
 }

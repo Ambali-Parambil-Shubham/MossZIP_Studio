@@ -1,14 +1,15 @@
 import { useState, useCallback, useEffect } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import JSZip from 'jszip';
 import { getApiUrl } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { downloadFile } from '../lib/downloadFile.js';
 
-// Setup PDF.js worker
+// Setup local offline PDF.js worker
 if (typeof window !== 'undefined' && pdfjsLib?.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 }
 
 function formatBytes(bytes) {
@@ -42,7 +43,6 @@ async function extractTextWithPdfJs(arrayBuffer) {
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(arrayBuffer),
       useSystemFonts: true,
-      standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
     });
     const pdf = await loadingTask.promise;
     const pagesText = [];
