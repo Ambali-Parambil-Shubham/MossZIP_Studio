@@ -50,26 +50,98 @@ function detectIsWeb() {
 }
 const IS_WEB = detectIsWeb();
 
+const PAGE_HASHES = {
+  compressor: '#/compress',
+  imageToPdf: '#/image-to-pdf',
+  pdfToWord:  '#/pdf-to-word',
+  mergePdf:   '#/merge-pdf',
+  splitPdf:   '#/split-pdf',
+  history:    '#/history',
+};
+
+const HASH_TO_PAGE = {
+  'compress': 'compressor',
+  'compressor': 'compressor',
+  'image-to-pdf': 'imageToPdf',
+  'imagetopdf': 'imageToPdf',
+  'pdf-to-word': 'pdfToWord',
+  'pdftoword': 'pdfToWord',
+  'merge-pdf': 'mergePdf',
+  'mergepdf': 'mergePdf',
+  'split-pdf': 'splitPdf',
+  'splitpdf': 'splitPdf',
+  'history': 'history',
+};
+
+function getInitialPage() {
+  if (typeof window === 'undefined') return 'compressor';
+
+  // 1. Check current URL hash
+  const rawHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+  if (rawHash && HASH_TO_PAGE[rawHash]) {
+    return HASH_TO_PAGE[rawHash];
+  }
+
+  // 2. Check localStorage persistence
+  try {
+    const saved = localStorage.getItem('mosszip_active_page');
+    if (saved && PAGE_HASHES[saved]) {
+      return saved;
+    }
+  } catch (e) {}
+
+  return 'compressor';
+}
+
 export default function App() {
   const { user, isAuthenticated, logout, openAuthModal } = useAuth();
-  const [activePage, setActivePage] = useState('compressor');
+  const [activePage, setActivePageState] = useState(getInitialPage);
   const [isAdminRoute, setIsAdminRoute] = useState(false);
   const [lastCompressed, setLastCompressed] = useState(null);
   const [preserveFormat, setPreserveFormat] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showDesktopModal, setShowDesktopModal] = useState(false);
 
-  // ── Admin route detection ────────────────────────────────────────────────────
+  // Set active page with URL hash and localStorage synchronization
+  const setActivePage = useCallback((page) => {
+    setActivePageState(page);
+    try {
+      localStorage.setItem('mosszip_active_page', page);
+      const hash = PAGE_HASHES[page] || '#/compress';
+      if (window.location.hash !== hash) {
+        window.history.replaceState(null, '', hash);
+      }
+    } catch (e) {}
+  }, []);
+
+  // ── Admin and page hash route detection & back/forward synchronization ───────
   useEffect(() => {
-    const checkAdminRoute = () => {
+    const checkRoutes = () => {
       const isHashAdmin   = window.location.hash === '#/admin' || window.location.hash === '#admin';
       const isSearchAdmin = window.location.search.includes('admin=1') || window.location.pathname.startsWith('/admin');
-      setIsAdminRoute(isHashAdmin || isSearchAdmin);
+      if (isHashAdmin || isSearchAdmin) {
+        setIsAdminRoute(true);
+        return;
+      }
+      setIsAdminRoute(false);
+
+      const rawHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+      if (rawHash && HASH_TO_PAGE[rawHash]) {
+        setActivePageState(HASH_TO_PAGE[rawHash]);
+        try { localStorage.setItem('mosszip_active_page', HASH_TO_PAGE[rawHash]); } catch (e) {}
+      }
     };
-    checkAdminRoute();
-    window.addEventListener('hashchange', checkAdminRoute);
-    return () => window.removeEventListener('hashchange', checkAdminRoute);
-  }, []);
+
+    // Ensure initial URL has matching hash if not present
+    if (!window.location.hash || window.location.hash === '#' || window.location.hash === '#/') {
+      const initialHash = PAGE_HASHES[activePage] || '#/compress';
+      window.history.replaceState(null, '', initialHash);
+    }
+
+    checkRoutes();
+    window.addEventListener('hashchange', checkRoutes);
+    return () => window.removeEventListener('hashchange', checkRoutes);
+  }, [activePage]);
 
   // ── Close profile menu on outside click ─────────────────────────────────────
   const profileMenuRef = useRef(null);
