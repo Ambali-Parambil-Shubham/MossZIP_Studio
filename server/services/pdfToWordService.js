@@ -4,7 +4,15 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun, PageBreak
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 const require = createRequire(import.meta.url);
-const { createCanvas } = require('canvas');
+
+let createCanvas;
+try {
+  const napi = require('@napi-rs/canvas');
+  createCanvas = napi.createCanvas;
+} catch (e) {
+  const nodeCanvas = require('canvas');
+  createCanvas = nodeCanvas.createCanvas;
+}
 
 const convertAsync = (buf, format, filter) => new Promise((resolve, reject) => {
   libre.convert(buf, format, filter, (err, done) => {
@@ -67,41 +75,47 @@ async function renderPdfPagesToWordImages(pdfDoc) {
   const elements = [];
 
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-    const page = await pdfDoc.getPage(pageNum);
-    // Scale 1.5 gives crisp ~150 DPI resolution for slides, circuits, and formulas
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = createCanvas(viewport.width, viewport.height);
-    const ctx = canvas.getContext('2d');
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      // Scale 1.5 gives crisp ~150 DPI resolution for slides, circuits, and formulas
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = createCanvas(viewport.width, viewport.height);
+      const ctx = canvas.getContext('2d');
 
-    // Ensure clean white background
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, viewport.width, viewport.height);
+      // Ensure clean white background
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.85 });
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const imgBuffer = typeof canvas.encodeSync === 'function'
+        ? canvas.encodeSync('jpeg', 85)
+        : canvas.toBuffer('image/jpeg', { quality: 0.85 });
 
-    // Standard Word page width ~ 595pt
-    const targetWidth = 595;
-    const targetHeight = Math.round((viewport.height / viewport.width) * targetWidth);
+      // Standard Word page width ~ 595pt
+      const targetWidth = 595;
+      const targetHeight = Math.round((viewport.height / viewport.width) * targetWidth);
 
-    elements.push(
-      new Paragraph({
-        children: [
-          new ImageRun({
-            data: imgBuffer,
-            transformation: { width: targetWidth, height: targetHeight },
-          }),
-        ],
-        spacing: { after: 120 },
-      })
-    );
-
-    if (pageNum < pdfDoc.numPages) {
       elements.push(
         new Paragraph({
-          children: [new PageBreak()],
+          children: [
+            new ImageRun({
+              data: imgBuffer,
+              transformation: { width: targetWidth, height: targetHeight },
+            }),
+          ],
+          spacing: { after: 120 },
         })
       );
+
+      if (pageNum < pdfDoc.numPages) {
+        elements.push(
+          new Paragraph({
+            children: [new PageBreak()],
+          })
+        );
+      }
+    } catch (pageErr) {
+      console.warn(`[PDFToWord] Warning: Page ${pageNum} rendering notice:`, pageErr.message);
     }
   }
 
@@ -191,7 +205,19 @@ export async function convertPdfToWord(pdfBuffer) {
     const visualElements = await renderPdfPagesToWordImages(pdfDoc);
     if (visualElements && visualElements.length > 0) {
       const doc = new Document({
-        sections: [{ properties: {}, children: visualElements }],
+        sections: [{
+          properties: {
+            page: {
+              margin: {
+                top: 720,
+                right: 720,
+                bottom: 720,
+                left: 720,
+              },
+            },
+          },
+          children: visualElements,
+        }],
       });
       const docxBytes = await Packer.toBuffer(doc);
       return Buffer.from(docxBytes);

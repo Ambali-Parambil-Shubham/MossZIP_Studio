@@ -106,9 +106,7 @@ async function generateDocxFromPdf(pdfFile) {
     }
 
     if (!hasAnyText) {
-      textLines.push('No selectable text was found in this PDF document.');
-      textLines.push(`This document (${pageCount} page${pageCount === 1 ? '' : 's'}) appears to be scanned or image-based.`);
-      textLines.push('Automatic editable text reconstruction requires OCR for scanned images.');
+      return null;
     }
 
     const paragraphXml = textLines.map(line => {
