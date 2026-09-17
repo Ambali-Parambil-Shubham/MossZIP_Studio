@@ -1,9 +1,15 @@
 import { useState, useCallback, useEffect } from 'react';
-import { PDFDocument, PDFRawStream, PDFStream } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
+import * as pdfjsLib from 'pdfjs-dist';
 import JSZip from 'jszip';
 import { getApiUrl } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { downloadFile } from '../lib/downloadFile.js';
+
+// Setup PDF.js worker
+if (typeof window !== 'undefined' && pdfjsLib?.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
+}
 
 function formatBytes(bytes) {
   if (bytes === 0) return '0 B';
@@ -28,90 +34,81 @@ function sanitizeXmlText(str) {
 }
 
 /**
- * PDF Text Extraction Engine with Character Cleaning
- * Strictly discards binary glyph indices and raw stream noise.
+ * Production-Grade PDF Text Extraction Engine using PDF.js
+ * Extracts genuine, human-readable Unicode text from all pages with CMap decoding.
  */
-function isReadableText(str) {
-  if (!str || str.length < 3) return false;
-  // Must contain letters or digits
-  if (!/[a-zA-Z0-9]/.test(str)) return false;
-  
-  // Check proportion of standard printable characters
-  let printableCount = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    // Standard printable ASCII (space 32 to ~ 126) plus common punctuation & newlines
-    if ((code >= 32 && code <= 126) || code === 10 || code === 13 || code === 9) {
-      printableCount++;
-    }
-  }
+async function extractTextWithPdfJs(arrayBuffer) {
+  try {
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(arrayBuffer),
+      useSystemFonts: true,
+      standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
+    });
+    const pdf = await loadingTask.promise;
+    const pagesText = [];
 
-  const ratio = printableCount / str.length;
-  // If less than 85% printable or contains consecutive unprintable glyphs, reject as stream noise
-  return ratio >= 0.85;
-}
-
-function extractRealTextFromPdf(pdfDoc) {
-  const extractedParagraphs = [];
-  const indirectObjects = pdfDoc.context.enumerateIndirectObjects();
-
-  for (const [ref, obj] of indirectObjects) {
-    if (!(obj instanceof PDFRawStream || obj instanceof PDFStream)) continue;
-
-    const rawBytes = obj.getContents();
-    if (!rawBytes || rawBytes.length < 20) continue;
-
-    let str = '';
-    try {
-      str = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
-    } catch (e) {
-      continue;
-    }
-
-    // Match text literals in PDF stream operators: (text) Tj, [(text)] TJ
-    const matches = str.match(/\(([^()]*)\)\s*(?:Tj|TJ|\'|\")/g);
-    if (matches && matches.length > 0) {
-      const cleanLine = matches
-        .map(m => m.replace(/^\(/, '').replace(/\)\s*(?:Tj|TJ|\'|\")$/, ''))
-        .map(s => s.replace(/\\([()\\])/g, '$1'))
-        .map(s => s.replace(/[\x00-\x1F\x7F-\x9F]/g, ' '))
-        .map(s => s.replace(/\s+/g, ' '))
-        .filter(s => s.trim().length > 0)
-        .join(' ')
-        .trim();
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
       
-      if (isReadableText(cleanLine)) {
-        extractedParagraphs.push(cleanLine);
+      let lastY = null;
+      let currentLine = '';
+      const pageLines = [];
+
+      for (const item of textContent.items) {
+        if (!item.str) continue;
+        const currentY = item.transform ? Math.round(item.transform[5]) : null;
+        if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 5) {
+          if (currentLine.trim()) pageLines.push(currentLine.trim());
+          currentLine = item.str;
+        } else {
+          currentLine += (currentLine ? ' ' : '') + item.str;
+        }
+        lastY = currentY;
+      }
+      if (currentLine.trim()) pageLines.push(currentLine.trim());
+
+      if (pageLines.length > 0) {
+        pagesText.push({ pageNum: i, lines: pageLines });
       }
     }
+    return { numPages: pdf.numPages, pagesText };
+  } catch (err) {
+    console.warn('[PdfToWordPage] PDF.js extraction notice:', err);
+    return null;
   }
-
-  return extractedParagraphs;
 }
 
 async function generateDocxFromPdf(pdfFile) {
   try {
-    let textLines = [];
     const arrayBuffer = await pdfFile.arrayBuffer();
-    const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+    const extracted = await extractTextWithPdfJs(arrayBuffer);
     
-    const pageCount = pdfDoc.getPageCount();
-    const extractedParagraphs = extractRealTextFromPdf(pdfDoc);
+    let textLines = [];
+    const pageCount = extracted?.numPages || 1;
 
     textLines.push(`Converted Document: ${pdfFile.name}`);
     textLines.push(`Total Pages: ${pageCount}`);
     textLines.push('----------------------------------------------------');
     textLines.push('');
 
-    if (extractedParagraphs.length > 0) {
-      extractedParagraphs.forEach(para => {
-        textLines.push(para);
+    let hasAnyText = false;
+    if (extracted && extracted.pagesText && extracted.pagesText.length > 0) {
+      for (const page of extracted.pagesText) {
+        textLines.push(`--- Page ${page.pageNum} ---`);
         textLines.push('');
-      });
-    } else {
-      textLines.push('No selectable plain text could be extracted from this PDF document.');
-      textLines.push('This document appears to contain scanned pages or custom embedded font encodings.');
-      textLines.push('For complete formatting and text extraction, please run the MossZip server backend.');
+        for (const line of page.lines) {
+          textLines.push(line);
+        }
+        textLines.push('');
+        hasAnyText = true;
+      }
+    }
+
+    if (!hasAnyText) {
+      textLines.push('No selectable text was found in this PDF document.');
+      textLines.push(`This document (${pageCount} page${pageCount === 1 ? '' : 's'}) appears to be scanned or image-based.`);
+      textLines.push('Automatic editable text reconstruction requires OCR for scanned images.');
     }
 
     const paragraphXml = textLines.map(line => {
