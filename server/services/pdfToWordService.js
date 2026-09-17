@@ -16,17 +16,17 @@ const convertAsync = (buf, format, filter) => new Promise((resolve, reject) => {
 async function extractPdfText(pdfBuffer) {
   if (typeof pdfParseModule === 'function') {
     const res = await pdfParseModule(pdfBuffer);
-    return res.text || '';
+    return { text: res.text || '', numPages: res.numpages || 1 };
   }
 
   if (pdfParseModule && pdfParseModule.PDFParse) {
     const parser = new pdfParseModule.PDFParse({ data: pdfBuffer });
     await parser.load();
     const res = await parser.getText();
-    return res.text || '';
+    return { text: res.text || '', numPages: res.total || 1 };
   }
 
-  return '';
+  return { text: '', numPages: 1 };
 }
 
 /**
@@ -47,7 +47,7 @@ export async function convertPdfToWord(pdfBuffer) {
 
   // Fallback: Text extraction + docx Document Builder
   try {
-    const rawText = await extractPdfText(pdfBuffer);
+    const { text: rawText, numPages } = await extractPdfText(pdfBuffer);
     const lines = rawText.split('\n');
 
     const paragraphs = [];
@@ -59,7 +59,7 @@ export async function convertPdfToWord(pdfBuffer) {
       }
 
       // Identify potential headings vs regular text
-      if (line.length < 50 && (line === line.toUpperCase() || i === 0)) {
+      if (line.length < 50 && /[A-Za-z]/.test(line) && (line === line.toUpperCase() || i === 0)) {
         paragraphs.push(
           new Paragraph({
             text: line,
@@ -83,11 +83,38 @@ export async function convertPdfToWord(pdfBuffer) {
       }
     }
 
+    // No selectable text found: this PDF is likely scanned/image-based and
+    // requires OCR, which this pipeline does not perform. Say so honestly
+    // instead of returning a misleading blank/generic document.
+    const noticeParagraphs = [
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: 'No selectable text was found in this PDF.',
+            bold: true,
+            font: 'Calibri',
+            size: 26,
+          }),
+        ],
+        spacing: { after: 120 },
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `This document (${numPages} page${numPages === 1 ? '' : 's'}) appears to be scanned or image-based. Automatic text conversion requires OCR, which is not currently available, so the original layout could not be reconstructed as editable text.`,
+            font: 'Calibri',
+            size: 22,
+          }),
+        ],
+        spacing: { after: 120 },
+      }),
+    ];
+
     const doc = new Document({
       sections: [
         {
           properties: {},
-          children: paragraphs.length > 0 ? paragraphs : [new Paragraph({ text: 'Converted PDF Document' })],
+          children: paragraphs.length > 0 ? paragraphs : noticeParagraphs,
         },
       ],
     });
