@@ -29,7 +29,28 @@ function sanitizeXmlText(str) {
 
 /**
  * PDF Text Extraction Engine with Character Cleaning
+ * Strictly discards binary glyph indices and raw stream noise.
  */
+function isReadableText(str) {
+  if (!str || str.length < 3) return false;
+  // Must contain letters or digits
+  if (!/[a-zA-Z0-9]/.test(str)) return false;
+  
+  // Check proportion of standard printable characters
+  let printableCount = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    // Standard printable ASCII (space 32 to ~ 126) plus common punctuation & newlines
+    if ((code >= 32 && code <= 126) || code === 10 || code === 13 || code === 9) {
+      printableCount++;
+    }
+  }
+
+  const ratio = printableCount / str.length;
+  // If less than 85% printable or contains consecutive unprintable glyphs, reject as stream noise
+  return ratio >= 0.85;
+}
+
 function extractRealTextFromPdf(pdfDoc) {
   const extractedParagraphs = [];
   const indirectObjects = pdfDoc.context.enumerateIndirectObjects();
@@ -42,7 +63,7 @@ function extractRealTextFromPdf(pdfDoc) {
 
     let str = '';
     try {
-      str = new TextDecoder('latin1').decode(rawBytes);
+      str = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
     } catch (e) {
       continue;
     }
@@ -53,12 +74,14 @@ function extractRealTextFromPdf(pdfDoc) {
       const cleanLine = matches
         .map(m => m.replace(/^\(/, '').replace(/\)\s*(?:Tj|TJ|\'|\")$/, ''))
         .map(s => s.replace(/\\([()\\])/g, '$1'))
-        .map(s => s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ''))
+        .map(s => s.replace(/[\x00-\x1F\x7F-\x9F]/g, ' '))
+        .map(s => s.replace(/\s+/g, ' '))
         .filter(s => s.trim().length > 0)
-        .join(' ');
+        .join(' ')
+        .trim();
       
-      if (cleanLine.trim().length > 2) {
-        extractedParagraphs.push(cleanLine.trim());
+      if (isReadableText(cleanLine)) {
+        extractedParagraphs.push(cleanLine);
       }
     }
   }
@@ -86,7 +109,9 @@ async function generateDocxFromPdf(pdfFile) {
         textLines.push('');
       });
     } else {
-      textLines.push('[Document contains scanned page images. Text extraction complete.]');
+      textLines.push('No selectable plain text could be extracted from this PDF document.');
+      textLines.push('This document appears to contain scanned pages or custom embedded font encodings.');
+      textLines.push('For complete formatting and text extraction, please run the MossZip server backend.');
     }
 
     const paragraphXml = textLines.map(line => {

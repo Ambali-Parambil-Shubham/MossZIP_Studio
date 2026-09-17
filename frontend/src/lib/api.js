@@ -10,11 +10,14 @@ export function getApiUrl(path) {
   }
 
   if (typeof window !== 'undefined') {
-    // Native mobile Capacitor, Electron file://, or Vite dev server (port 5173) -> target backend port 3001 directly
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
+
+    // Native mobile Capacitor, Electron file://, or ANY local dev server port not running Express on 3001
     if (
       window.location.protocol === 'file:' || 
       window.location.protocol === 'capacitor:' || 
-      window.location.port === '5173'
+      (isLocalhost && window.location.port !== '3001')
     ) {
       return `http://localhost:3001${path}`;
     }
